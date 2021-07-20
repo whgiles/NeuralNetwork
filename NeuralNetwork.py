@@ -227,3 +227,7 @@ class NeuralNetwork:
     def plot(self):
         plt.plot(self.cost)
         plt.show()
+
+    def reset(self):
+        self.weights = []
+        self.cost = []
