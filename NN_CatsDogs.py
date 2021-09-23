@@ -9,15 +9,26 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
-
+import time
 # OpenCV-Python is a library of Python bindings designed to solve computer vision problems.
 import cv2
 import numpy as np
 # smart output processing bars
 from tqdm import tqdm
 
+MODEL_NAME = f"model-{int(time.time())}"
+
 # set to true if you haven't built your data or you want to rebuild you data
 REBUILD_DATA = False
+
+# if i decide to use a GPU later, I can.
+if torch.cuda.is_available():
+    device = torch.device('cuda:0')
+    print('running on the GPU')
+    print('Available GPUs: ', torch.cuda.device_count())
+else:
+    device = torch.device('cpu')
+    print('running on CPU')
 
 
 class DogsVSCats:
@@ -120,9 +131,11 @@ class Net(nn.Module):
         return x
 
 
-net = Net()
+net = Net().to(device)
 optimizer = optim.Adam(net.parameters(), lr=.001)
 loss_function = nn.MSELoss()
+
+print(MODEL_NAME)
 
 # below uses a short hand for loop, which is equal to a list of training_data[0]
 X = torch.Tensor([i[0] for i in training_data]).view(-1, 50, 50)
@@ -139,46 +152,43 @@ train_y = y[:-val_size]
 test_X = X[-val_size:]
 test_y = y[-val_size:]
 
-BATCH_SIZE = 100
-EPOCHS = 1
 
-for epoch in range(EPOCHS):
-    for i in tqdm(range(0, len(train_X), BATCH_SIZE)):
-        batch_X = train_X[i:i + BATCH_SIZE].view(-1, 1, 50, 50)
-        batch_y = train_y[i:i + BATCH_SIZE]
-
+def fwd_pass(X, y, train=False):
+    if train:
         net.zero_grad()
-        output = net(batch_X)
-        loss = loss_function(output, batch_y)
+    outputs = net(X)
+    matches = [torch.argmax(i) == torch.argmax(j) for i, j in zip(outputs, y)]
+    acc = matches.count(True) / len(matches)
+    loss = loss_function(outputs, y)
+
+    if train:
         loss.backward()
         optimizer.step()
 
-correct = 0
-total = 0
-with torch.no_grad():
-    for i in tqdm(range(len(test_X))):
-        real_class = torch.argmax(test_y[i])
-        net_out = net(test_X[i].view(-1, 1, 50, 50))[0]
+    return acc, loss
 
-        predicted_class = torch.argmax(net_out)
-        if predicted_class == real_class:
-            correct += 1
-        total += 1
 
-print('Accuracy: ', round(correct / total, 3))
-try:
-    torch.save(net, "/Users/williamgiles/repos/NeuralNetwork/netty")
-except Exception as e:
-    print(e)
+def test(size=32):
+    X, y = test_X[:size], test_y[:size]
+    val_acc, val_loss = fwd_pass(X.view(-1, 1, 50, 50).to(device), y.to(device))
+    return val_acc, val_loss
 
-new_net = torch.load("/Users/williamgiles/repos/NeuralNetwork/netty")
-net_out = new_net(test_X[1].view(-1, 1, 50, 50))[0]
-if net_out[0] > net_out[1]:
-    print('cat')
-else:
-    print('dog')
 
-image = np.array(test_X[1].view(-1, 1, 50, 50)[0][0])
-print(image)
-plt.imshow(image, cmap="gray")
-plt.show()
+def train(net):
+    BATCH_SIZE = 100
+    EPOCHS = 5
+
+    with open('model.log', 'a') as f:
+        for epoch in range(EPOCHS):
+            for i in tqdm(range(0, len(train_X), BATCH_SIZE)):
+                batch_X = train_X[i:i + BATCH_SIZE].view(-1, 1, 50, 50).to(device)
+                batch_y = train_y[i:i + BATCH_SIZE].to(device)
+
+                acc, loss = fwd_pass(batch_X, batch_y, train=True)
+                if i % 50 == 0:
+                    val_acc, val_loss = test(size=100)
+                    f.write(
+                        f"{MODEL_NAME},{round(time.time(), 3)},{round(float(acc), 2)},{round(float(loss), 4)},{round(float(val_acc), 2)},{round(float(val_loss), 4)}\n")
+
+
+train(net)
