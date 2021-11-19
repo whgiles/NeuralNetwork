@@ -104,7 +104,7 @@ def train(X, Y, architecture, epochs, learning_rate):
     params = init_layers(architecture)
     cost_history = []
     for epoch in range(epochs):
-        for idx, val in tqdm(enumerate(X)):
+        for idx, val in tqdm(enumerate(X), desc='EPOCH'):
             x = val.reshape(16,1)
             y = Y[idx]
             y_hat, cashe = forward_propagation(x, params, architecture)
